@@ -30,7 +30,7 @@ def main():
         # Log in by filling in the username and password fields
         page.fill('input[name="username"]', username)
         page.fill('input[name="password"]', password)
-        # or the actual submit button's selector
+        # Click the submit button
         page.click('input[class="submit"]')
 
         # Wait for the page to load and check login
@@ -40,7 +40,6 @@ def main():
         try:
             page.goto(
                 "https://jpopsuki.eu/torrents.php?action=advanced", timeout=60000)
-
         except Exception as e:
             print(f"Error loading the advanced search page: {e}")
             browser.close()
@@ -48,7 +47,8 @@ def main():
 
         # Wait for the search link to appear and click it
         page.wait_for_selector(
-            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//form[@id='torrents_filter']//b/center/a")
+            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//form[@id='torrents_filter']//b/center/a",
+            timeout=60000)  # Increase timeout
         page.click(
             "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//form[@id='torrents_filter']//b/center/a")
 
@@ -65,8 +65,8 @@ def main():
         tags = tags_input.split(',') if tags_input else []
 
         # Debugging: Print the search parameters
-        print(f"Searching for: Artist: {artist_name}, Album: {
-              album_name}, Remaster: {remaster_title}, Tags: {', '.join(tags)}")
+        print(
+            f"Searching for: Artist: {artist_name}, Album: {album_name}, Remaster: {remaster_title}, Tags: {', '.join(tags)}")
 
         # Fill in search parameters if provided
         if artist_name:
@@ -81,19 +81,19 @@ def main():
         if tags:
             page.fill('input[name="searchtags"]', ', '.join(tags))
 
-        # Submit the form
+        # Submit the form with increased timeout for the click action
         page.click(
-            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//form[@id='torrents_filter']//div[@id='search_box']//div[@id='filter_torrents']//div[@class='box pad']//div[@class='submit']//input[@type='submit']")
+            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//form[@id='torrents_filter']//div[@id='search_box']//div[@class='filter_torrents']//div[@class='box pad']//div[@class='submit']//input[@type='submit']",
+            timeout=60000)  # Increase the timeout to 60 seconds
 
-        # Wait for the results to load by checking for a specific element with increased timeout
-
+        # Wait for the results to load by checking for a specific element
         page.wait_for_selector(
-            # 10 seconds
-            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@id='torrent_table']", timeout=10000)
+            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@class='torrent_table']",
+            timeout=10000)
 
         # Check for search results
         rows = page.query_selector_all(
-            "//div[@id='ajax_torrents']//table[@id='torrent_table']//tbody/tr")
+            "//div[@id='ajax_torrents']//table[@class='torrent_table']//tbody/tr")
 
         # Start from the second row to skip the first one
         for result in rows[1:]:
@@ -103,7 +103,14 @@ def main():
                 a_tags = third_td.query_selector_all('a')
                 if len(a_tags) > 1:
                     second_a_tag = a_tags[1]
-                    print(second_a_tag.get_attribute('href'))
+                    href = second_a_tag.get_attribute('href')
+                    if not 'torrent' in href:  # Ensure it's a torrent link
+                        # Replace "report" with "torrent" and "reports" with "torrents" in the href
+                        corrected_href = href.replace(
+                            'report', 'torrent').replace('reports', 'torrents')
+                        print(corrected_href)
+                    else:
+                        print("Not a torrent link:", href)
                 else:
                     print("Not found: second <a> tag")
             else:
