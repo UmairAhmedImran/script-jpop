@@ -3,38 +3,46 @@ from playwright.sync_api import sync_playwright
 
 
 def process_table(page, total_links_counter):
-    # Wait for the results to load by checking for a specific element
-    page.wait_for_selector(
-        "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@class='torrent_table']",
-        timeout=10000)
+    # Wait for the table to be visible after loading the page
+    try:
+        print("Waiting for the torrent table to be visible.")
+        page.wait_for_selector(
+            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@class='torrent_table']",
+            timeout=15000,  # Increased timeout to 15 seconds
+            state='visible'  # Ensure the element is visible
+        )
+    except Exception as e:
+        print(f"Error or timeout while waiting for the table: {e}")
+        return False  # Stop if there's an error or timeout
 
-    # Get all the rows in the table
-    rows = page.query_selector_all(
-        "//div[@id='ajax_torrents']//table[@class='torrent_table']//tbody/tr")
+    # Fetch all <tr> elements within the table
+    tr_elements = page.query_selector_all(
+        "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@class='torrent_table']//tr"
+    )
 
-    # Loop through the rows, starting from the second one
-    for result in rows[1:]:
-        tds = result.query_selector_all('td')
-        if len(tds) > 3:
-            third_td = tds[3]
-            a_tags = third_td.query_selector_all('a')
-            if len(a_tags) > 1:
-                second_a_tag = a_tags[1]
-                href = second_a_tag.get_attribute('href')
-                if not 'torrent' in href:  # Ensure it's a torrent link
-                    # Replace "report" with "torrent" and "reports" with "torrents" in the href
-                    corrected_href = href.replace(
-                        'report', 'torrent').replace('reports', 'torrents')
-                    print(corrected_href)
-                    total_links_counter += 1  # Increment the counter when a valid link is found
+    print(f"Total <tr> tags found: {len(tr_elements)}")
+    # total_links_counter.append(len(tr_elements))
+
+    # Loop over each row and check the 4th <td> and the 2nd <a> tag inside it
+    for tr in tr_elements:
+        try:
+            # Get the 4th <td> in the row
+            td_4th = tr.query_selector("td:nth-child(4)")
+            if td_4th:
+                # Find all <a> tags within the 4th <td>
+                a_tags = td_4th.query_selector_all("a")
+                if len(a_tags) >= 2:
+                    # Get the 2nd <a> tag and extract its text content
+                    second_a_tag_text = a_tags[1].inner_text()
+                    print(f"Found name: {second_a_tag_text}")
                 else:
-                    print("Not a torrent link:", href)
+                    print("No name: Less than 2 <a> tags found in the 4th <td>")
             else:
-                print("Not found: second <a> tag")
-        else:
-            print("Not found: third <td>")
+                print("No name: 4th <td> not found")
+        except Exception as e:
+            print(f"Error processing row: {e}")
 
-    return total_links_counter, len(rows) > 1  # Return if any rows were found
+    return len(tr_elements) > 0  # Return True if there are rows
 
 
 def check_and_navigate_next_page(page):
@@ -48,14 +56,18 @@ def check_and_navigate_next_page(page):
         next_link.click()  # Simulate a click on the <a> tag that comes after <strong>
 
         # Wait for new content (table rows) to load
-        page.wait_for_selector(
-            "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@class='torrent_table']",
-            timeout=10000  # Adjust timeout as needed
-        )
-
-        return True
+        try:
+            page.wait_for_selector(
+                "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@class='torrent_table']",
+                timeout=10000  # Adjust timeout as needed
+            )
+            return True  # Successfully loaded the next page
+        except Exception as e:
+            print(
+                f"Timeout or error occurred while waiting for the next page: {e}")
+            return False  # Stop if there's a timeout or error
     else:
-        print("No <a> tag found after <strong>. Program completed.")
+        print("No <a> tag found after <strong>. This is the last page.")
         return False  # No more pages to navigate, the process is complete
 
 
@@ -140,7 +152,7 @@ def main():
 
         # Process the search results table
         results_found = process_table(page, total_links_counter)
-
+        print(results_found)
         # Keep checking for the next page link and processing until no more results
         while results_found:
             if check_and_navigate_next_page(page):
