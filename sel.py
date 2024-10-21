@@ -20,20 +20,28 @@ async def extract_links(page):
     tr_elements = await page.query_selector_all(
         "//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//table[@class='torrent_table']//tbody//tr"
     )
-    tr_elements = tr_elements[2:5]
     print(f"Total <tr> tags found: {len(tr_elements)}")
 
     download_links = []
 
-    # Loop through each <tr> and find the download link
+    # Loop through each <tr> and find the download link, name, and size
     for index, tr in enumerate(tr_elements):
         try:
             # Find the download link within the current <tr>
             download_a_tag = await tr.query_selector("span a[title*='Download']")
             if download_a_tag:
                 href = await download_a_tag.get_attribute('href')
-                download_links.append(href)
-                print(f"Found download link for torrent {index + 1}: {href}")
+
+                # Extract the name from a <td> that contains an <a> tag with title including "View Torrent"
+                name_tag = await tr.query_selector("td a[title*='View Torrent']")
+                name = await name_tag.inner_text() if name_tag else None
+
+                # Extract the size from a <td> with class 'nobr' and no title attribute
+                size_tag = await tr.query_selector("td.nobr:not([title])")
+                size = await size_tag.inner_text() if size_tag else None
+
+                download_links.append((href, name, size))
+                print(f"Found download link for torrent {index + 1}: {href}, Name: {name}, Size: {size}")
             else:
                 print(f"No download link found for torrent {index + 1}.")
         except Exception as e:
@@ -43,8 +51,8 @@ async def extract_links(page):
 
 async def check_and_navigate_next_page(page):
     try:
-        # Check if the "next" button is available
-        next_button = await page.query_selector("//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//div[@class='linkbox']//a[@class='next']")
+        # Check if the "next" button is available within a <strong> element
+        next_button = await page.query_selector("//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//div[@id='ajax_torrents']//div[@class='linkbox']//strong[contains(text(), 'Next')]")
         if next_button:
             print("Navigating to the next page.")
             await next_button.click()  # Click the next button
@@ -58,19 +66,30 @@ async def check_and_navigate_next_page(page):
         return False
 
 async def process_torrents(page):
+    all_download_links = []
+
     # Loop through torrent pages until there are no more pages
     while True:
-        success = await extract_links(page)  # Download all links on the current page
-        if not success or not await check_and_navigate_next_page(page):  # Check if more pages exist
+        # Extract links on the current page
+        download_links = await extract_links(page)
+        all_download_links.extend(download_links)
+
+        # Check if more pages exist and navigate
+        if not await check_and_navigate_next_page(page):
             break
 
+    # Write all download links to a file with a pipe delimiter
+    with open('download_links.txt', 'w') as f:
+        for link, name, size in all_download_links:
+            f.writelines(f"{link}|{name}|{size}\n")
 
+    return all_download_links
 
 async def main():
     # Initialize the total link counter
     total_links_counter = 0
 
-    async with async_playwright() as p:  # Use async_playwright instead of sync_playwright
+    async with async_playwright() as p:
         download_dir = "downloads"
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
@@ -108,7 +127,7 @@ async def main():
         # Wait for the page to load and check login
         try:
             await page.wait_for_selector('div#wrapper', timeout=300000)
-            print("Login successful.")  # Confirm successful login
+            print("Login successful.")
         except Exception as e:
             print(f"Login failed: {e}")
             await browser.close()
@@ -118,15 +137,15 @@ async def main():
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                await page.goto("https://jpopsuki.eu/torrents.php?action=advanced", timeout=60000)  # Increased timeout
-                await page.wait_for_load_state('networkidle')  # Wait for the page to fully load
-                print("Navigated to the advanced search page successfully.")
-                break  # Exit the loop if successful
+                await page.goto("https://jpopsuki.eu/torrents.php?", timeout=60000)
+                await page.wait_for_load_state('networkidle')
+                print("Navigated to the basic search page successfully.")
+                break
             except Exception as e:
                 print(f"Error loading the advanced search page (attempt {attempt + 1}): {e}")
                 if attempt < max_retries - 1:
                     print("Retrying...")
-                    await asyncio.sleep(2)  # Optional delay before retrying
+                    await asyncio.sleep(2)
                 else:
                     print("Max retries reached. Exiting.")
                     await browser.close()
@@ -143,40 +162,38 @@ async def main():
         await asyncio.sleep(2)
 
         # Get search parameters from user input
-        artist_name = input("Enter artist name (leave blank if not needed): ")
-        album_name = input("Enter album name (leave blank if not needed): ")
-        remaster_title = input(
-            "Enter remaster title (leave blank if not needed): ")
-        tags_input = input(
-            "Enter tags separated by commas (leave blank if not needed): ")
+        search_string = input("Enter search string (leave blank if not needed): ")
+        tags_input = input("Enter tags separated by commas (leave blank if not needed): ")
         tags = tags_input.split(',') if tags_input else []
 
-        # Fill in search parameters if provided
-        if artist_name:
-            await page.fill('input[name="artistname"]', artist_name)
-        if album_name:
-            await page.fill('input[name="torrentname"]', album_name)
-        if remaster_title:
-            await page.fill('input[name="remastertitle"]', remaster_title)
+        # Get category selections from user input
+        categories = input("Enter category numbers (1-10) separated by commas (e.g., 1,3,5): ")
+        selected_categories = categories.split(',')
+
+        # Get order selection from user input
+        order = input("Enter order (asc for ascending, desc for descending): ").strip().lower()
+
+        if search_string:
+            await page.fill('input[name="searchstr"]', search_string)
         if tags:
             await page.fill('input[name="searchtags"]', ', '.join(tags))
+
+        # Select categories
+        for cat in selected_categories:
+            cat_id = f"cat_{cat.strip()}"
+            await page.check(f'input[id="{cat_id}"]')
+
+        # Select order
+        if order in ['asc', 'desc']:
+            await page.select_option('select[name="order_way"]', order)
 
         # Submit the form
         await page.click("//body[@id='torrents']//div[@id='wrapper']//div[@id='content']//form[@id='torrents_filter']//div[@id='search_box']//div[@class='filter_torrents']//div[@class='box pad']//div[@class='submit']//input[@type='submit']")
 
-        await process_torrents(page)
+        # Process torrents and extract all download links
+        all_download_links = await process_torrents(page)
 
-        # Extract download links
-        download_links = await extract_links(page)
-
-        # Pass download links to Scrapy
-        # This could be done by writing to a file, database, or directly calling a Scrapy function
-        with open('download_links.txt', 'w') as f:
-            for link in download_links:
-                f.write(f"{link}\n")
-
-        await browser.close()  # Ensure the browser closes after processing
-
+        await browser.close()
 
 # Run the async main function
 asyncio.run(main())

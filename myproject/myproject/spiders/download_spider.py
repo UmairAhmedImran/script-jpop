@@ -1,6 +1,5 @@
 import scrapy
 import os
-import hashlib
 
 class DownloadSpider(scrapy.Spider):
     name = 'download_spider'
@@ -15,14 +14,23 @@ class DownloadSpider(scrapy.Spider):
         # Read the download links from the file
         with open(file_path, 'r') as f:
             links = f.readlines()
-        for link in links:
-            full_url = base_url + link.strip()
-            yield scrapy.Request(url=full_url, callback=self.download_file)
 
-    def download_file(self, response):
-        # Generate a unique file name using a hash
-        file_hash = hashlib.md5(response.url.encode()).hexdigest()
-        file_name = f"{file_hash}.torrent"
+        previous_name = None
+        for line in links:
+            link, name, size = line.strip().split('|')
+            full_url = base_url + link
+
+            # Use the previous name if the current name is empty
+            if not name:
+                name = previous_name
+            else:
+                previous_name = name
+
+            yield scrapy.Request(url=full_url, callback=self.download_file, cb_kwargs={'name': name, 'size': size})
+
+    def download_file(self, response, name, size):
+        # Generate a unique file name using the name and size
+        file_name = f"{name}_{size}.torrent"
 
         # Ensure the downloads directory exists
         os.makedirs('downloads', exist_ok=True)
