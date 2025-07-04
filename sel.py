@@ -3,6 +3,15 @@ from playwright.async_api import async_playwright
 import os
 import asyncio
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("python-dotenv not installed. Using system environment variables only.")
+    print("Install with: pip install python-dotenv")
+
+
 async def extract_links(page):
     # Wait for the table to appear
     try:
@@ -41,13 +50,15 @@ async def extract_links(page):
                 size = await size_tag.inner_text() if size_tag else None
 
                 download_links.append((href, name, size))
-                print(f"Found download link for torrent {index + 1}: {href}, Name: {name}, Size: {size}")
+                print(
+                    f"Found download link for torrent {index + 1}: {href}, Name: {name}, Size: {size}")
             else:
                 print(f"No download link found for torrent {index + 1}.")
         except Exception as e:
             print(f"Error processing row {index + 1}: {e}")
 
     return download_links
+
 
 async def check_and_navigate_next_page(page):
     try:
@@ -56,7 +67,8 @@ async def check_and_navigate_next_page(page):
         if next_button:
             print("Navigating to the next page.")
             await next_button.click()  # Click the next button
-            await page.wait_for_load_state('networkidle')  # Wait for the page to load fully
+            # Wait for the page to load fully
+            await page.wait_for_load_state('networkidle')
             return True
         else:
             print("No more pages to navigate.")
@@ -64,6 +76,7 @@ async def check_and_navigate_next_page(page):
     except Exception as e:
         print(f"Error navigating to next page: {e}")
         return False
+
 
 async def process_torrents(page):
     all_download_links = []
@@ -85,6 +98,7 @@ async def process_torrents(page):
 
     return all_download_links
 
+
 async def main():
     # Initialize the total link counter
     total_links_counter = 0
@@ -105,9 +119,10 @@ async def main():
             '--window-size=1920,1080',
         ])
 
-                # Launch the browser with download directory set
+        # Launch the browser with download directory set
         browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(accept_downloads=True)  # Accept downloads
+        # Accept downloads
+        context = await browser.new_context(accept_downloads=True)
         # context.set_default_download_path(download_dir)  # Set download path
 
         page = await context.new_page()
@@ -115,9 +130,15 @@ async def main():
         # Navigate to the login page
         await page.goto("https://jpopsuki.eu/login.php")
 
-        # Get username and password from user input
-        username = input("Enter your username: ")
-        password = input("Enter your password: ")
+        # Get username and password from environment variables
+        username = os.getenv("JPOPSUKI_USERNAME")
+        password = os.getenv("JPOPSUKI_PASSWORD")
+
+        if not username or not password:
+            print(
+                "Error: JPOPSUKI_USERNAME and JPOPSUKI_PASSWORD environment variables must be set")
+            await browser.close()
+            return
 
         # Log in by filling in the username and password fields
         await page.fill('input[name="username"]', username)
@@ -142,7 +163,8 @@ async def main():
                 print("Navigated to the basic search page successfully.")
                 break
             except Exception as e:
-                print(f"Error loading the advanced search page (attempt {attempt + 1}): {e}")
+                print(
+                    f"Error loading the advanced search page (attempt {attempt + 1}): {e}")
                 if attempt < max_retries - 1:
                     print("Retrying...")
                     await asyncio.sleep(2)
@@ -161,17 +183,25 @@ async def main():
         # Delay for the page to load
         await asyncio.sleep(2)
 
-        # Get search parameters from user input
-        search_string = input("Enter search string (leave blank if not needed): ")
-        tags_input = input("Enter tags separated by commas (leave blank if not needed): ")
-        tags = tags_input.split(',') if tags_input else []
+        # Get search parameters from environment variables
+        search_string = os.getenv("JPOPSUKI_SEARCH_STRING", "")
+        tags_input = os.getenv("JPOPSUKI_TAGS", "")
+        tags = [tag.strip() for tag in tags_input.split(
+            ',') if tag.strip()] if tags_input else []
 
-        # Get category selections from user input
-        categories = input("Enter category numbers (1-10) separated by commas (e.g., 1,3,5): ")
-        selected_categories = categories.split(',')
+        # Get category selections from environment variables
+        categories = os.getenv("JPOPSUKI_CATEGORIES", "")
+        selected_categories = [cat.strip() for cat in categories.split(
+            ',') if cat.strip()] if categories else []
 
-        # Get order selection from user input
-        order = input("Enter order (asc for ascending, desc for descending): ").strip().lower()
+        # Get order selection from environment variables
+        order = os.getenv("JPOPSUKI_ORDER", "desc").strip().lower()
+
+        print(f"Search parameters:")
+        print(f"  Search string: '{search_string}'")
+        print(f"  Tags: {tags}")
+        print(f"  Categories: {selected_categories}")
+        print(f"  Order: {order}")
 
         if search_string:
             await page.fill('input[name="searchstr"]', search_string)

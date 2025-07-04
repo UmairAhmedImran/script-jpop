@@ -1,5 +1,31 @@
-/__pycache__/*
-/chromedriver.exe
-/.vscode/*
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
 /.venv/*
 venv/
+.venv/
+env/
+
+# IDE
+/.vscode/*
+.idea/
+
+# Project specific
+download_links.txt
+downloads/
+*.torrent
+
+# Selenium/Browser drivers
+/chromedriver.exe
+chromedriver
+geckodriver
+
+# OS
+.DS_Store
+Thumbs.db
